@@ -1,0 +1,30 @@
+cora:
+  seed: 39788
+  learning_rate: 0.0005
+  num_hidden: 256
+  num_proj_hidden: 256
+  drop_scheme: "uniform"
+  drop_edge_rate_1: 0.2
+  drop_edge_rate_2: 0.4
+  drop_feature_rate_1: 0.3
+  drop_feature_rate_2: 0.4
+  tau: 0.4
+  weight_decay: 0.00001
+  num_epochs: 400
+  patience: 400
+  disk: 2.0
+dblp:
+  seed: 83521
+  learning_rate: 0.001
+  num_hidden: 256
+  num_proj_hidden: 256
+  drop_scheme: "uniform"
+  drop_edge_rate_1: 0.2
+  drop_edge_rate_2: 0.4
+  drop_feature_rate_1: 0.3
+  drop_feature_rate_2: 0.4
+  tau: 0.7 #0.9
+  weight_decay: 0.00001
+  num_epochs: 1000
+  patience: 1000
+  disk: 4.0
