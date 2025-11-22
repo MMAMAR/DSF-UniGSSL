@@ -6,8 +6,8 @@ from torch_geometric.nn import GCNConv
 from torch_geometric.utils import degree, to_undirected, dropout_adj, to_networkx
 from torch_scatter import scatter
 import networkx as nx
-
-
+from torch.utils.data import DataLoader
+from sklearn.metrics import roc_auc_score, average_precision_score
 ########### Encoder ###########
 class Encoder(torch.nn.Module):
     def __init__(self, in_channels: int, out_channels: int, activation,
@@ -210,69 +210,75 @@ def drop_feature_global(data, device, drop_scheme: str, drop_feature_rate: float
     else:
         raise Exception(f'undefined drop scheme: {drop_scheme}')
 
-
-# from torch_geometric.datasets import Planetoid
-# dataset = Planetoid(root='/tmp/Cora', name='Cora')
-# data = dataset[0]
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# data = data.to(device)
-
-# # drop_scheme = ['uniform', 'degree', 'evc', 'pr']
-# edge_index_1 = drop_edge(data, device, 'degree', 0.1)
-# edge_index_2 = drop_edge(data, device, 'degree', 0.2)
-# x_1 = drop_feature_global(data, device, 'degree', 0.1)
-# x_2 = drop_feature_global(data, device, 'degree', 0.2)
-
-
-
-
 def shuffle(x):
     idx = torch.randperm(x.shape[0])
     return x[idx]
 
-# test
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-# t = torch.Tensor([[1,2,3,7], [4,5,6,8], [0,9,10,11]]).to(device)
-# shuffle(t)
+def evaluate_auc(train_pred, train_true, val_pred, val_true, test_pred, test_true):
+    train_auc = roc_auc_score(train_true, train_pred)
+    valid_auc = roc_auc_score(val_true, val_pred)
+    test_auc = roc_auc_score(test_true, test_pred)
+
+    return {'auc_train': train_auc, 'auc_val': valid_auc, 'auc_test': test_auc}
 
 
-# def shuffle_values(x, shuffle_prob=0.1, seed=129):
-#     if seed is not None:
-#         torch.manual_seed(seed)
+@torch.no_grad()
+def test_link_prediction(model, predictor, data, split_edge, batch_size):
+    model.eval()
+    h = model(data.x, data.edge_index)
 
-#     # Get the number of rows and columns in the tensor
-#     rows, cols = x.shape
+    pos_train_edge = split_edge['train']['edge'].to(data.x.device)
+    neg_train_edge = split_edge['train']['edge_neg'].to(data.x.device)
+    pos_test_edge = split_edge['valid']['edge'].to(data.x.device)
+    neg_test_edge = split_edge['valid']['edge_neg'].to(data.x.device)
+    pos_valid_edge = split_edge['test']['edge'].to(data.x.device)
+    neg_valid_edge = split_edge['test']['edge_neg'].to(data.x.device)
 
-#     # Iterate over each row and shuffle its values with probability shuffle_prob
-#     for i in range(rows):
-#         if torch.rand(1).item() < shuffle_prob:
-#             x[i] = x[i][torch.randperm(cols)]
+    pos_train_preds = []
+    for perm in DataLoader(range(pos_train_edge.size(0)), batch_size):
+        edge = pos_train_edge[perm].t()
+        pos_train_preds += [predictor(h, edge).squeeze().cpu()]
+    pos_train_pred = torch.cat(pos_train_preds, dim=0)
 
-#     return x
+    pos_valid_preds = []
+    for perm in DataLoader(range(pos_valid_edge.size(0)), batch_size):
+        edge = pos_valid_edge[perm].t()
+        pos_valid_preds += [predictor(h, edge).squeeze().cpu()]
+    pos_valid_pred = torch.cat(pos_valid_preds, dim=0)
 
-# t = torch.Tensor([[1,2,3,7], [4,5,6,8], [0,9,10,11], [1,2,3,7]]).to(device)
-# shuffle_values(t)
+    neg_train_preds = []
+    for perm in DataLoader(range(neg_train_edge.size(0)), batch_size):
+        edge = neg_train_edge[perm].t()
+        neg_train_preds += [predictor(h, edge).squeeze().cpu()]
+    neg_train_pred = torch.cat(neg_train_preds, dim=0)
 
+    neg_valid_preds = []
+    for perm in DataLoader(range(neg_valid_edge.size(0)), batch_size):
+        edge = neg_valid_edge[perm].t()
+        neg_valid_preds += [predictor(h, edge).squeeze().cpu()]
+    neg_valid_pred = torch.cat(neg_valid_preds, dim=0)
 
-# def shuffle_subset(x, subset_probability=0.2):
-#     torch.manual_seed(129)
-    
-#     # Determine the subset size based on the probability
-#     subset_size = int(x.shape[0] * subset_probability)
-    
-#     # Check if there are enough rows for a subset
-#     if subset_size > 1:
-#         # Determine the subset indices
-#         subset_indices = torch.randperm(x.shape[0])[:subset_size]
-        
-#         # Shuffle only the selected subset
-#         shuffled_subset = x[subset_indices]
-#         shuffled_subset = shuffled_subset[torch.randperm(subset_size)]
-        
-#         # Update the original tensor with the shuffled subset
-#         x[subset_indices] = shuffled_subset
-    
-#     return x
+    pos_test_preds = []
+    for perm in DataLoader(range(pos_test_edge.size(0)), batch_size):
+        edge = pos_test_edge[perm].t()
+        pos_test_preds += [predictor(h, edge).squeeze().cpu()]
+    pos_test_pred = torch.cat(pos_test_preds, dim=0)
 
-# t = torch.Tensor([[1,2,3,7], [4,5,6,8], [0,9,10,11], [12,22,23,27]]).to(device)
-# shuffle_subset(t, 0.4)
+    neg_test_preds = []
+    for perm in DataLoader(range(neg_test_edge.size(0)), batch_size):
+        edge = neg_test_edge[perm].t()
+        neg_test_preds += [predictor(h, edge).squeeze().cpu()]
+    neg_test_pred = torch.cat(neg_test_preds, dim=0)
+
+    train_pred = torch.cat([pos_train_pred, neg_train_pred], dim=0)
+    train_true = torch.cat([torch.ones_like(pos_train_pred), torch.zeros_like(neg_train_pred)], dim=0)
+
+    val_pred = torch.cat([pos_valid_pred, neg_valid_pred], dim=0)
+    val_true = torch.cat([torch.ones_like(pos_valid_pred), torch.zeros_like(neg_valid_pred)], dim=0)
+
+    test_pred = torch.cat([pos_test_pred, neg_test_pred], dim=0)
+    test_true = torch.cat([torch.ones_like(pos_test_pred), torch.zeros_like(neg_test_pred)], dim=0)
+
+    results = evaluate_auc(train_pred, train_true, val_pred, val_true, test_pred, test_true)
+
+    return results
