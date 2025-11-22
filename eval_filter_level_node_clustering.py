@@ -10,12 +10,11 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-import matplotlib.pyplot as plt
+
 import numpy as np
 import pandas as pd
 
-import models.second_eval_func as evals
-from models.logreg import LogReg
+
 import random
 from models.filter_level import train_filter_level
 
@@ -32,8 +31,8 @@ def set_seed(seed=42):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset", type=str, default="cora")
-parser.add_argument("--pretraining_type", type=str, default="none")  # cluster, graph, node, prox
-parser.add_argument("--finetuning_type", type=str, default="none")  # cluster, graph, node, prox
+parser.add_argument("--pretraining_type", type=str, default="none")
+parser.add_argument("--finetuning_type", type=str, default="none")
 parser.add_argument("--device_number", type=int, default=2)
 parser.add_argument("--filtering_threshold", type=float, default=1.0)
 parser.add_argument("--pca_n_comp", type=int, default=0)
